@@ -11,8 +11,8 @@
 
 #define SECTOR_SIZE	512
 #define DISK_SZ		(4096 * 1024)
-#define N_ACCESSES	50
-#define N_FORKS		10
+#define N_ACCESSES	70
+#define N_FORKS		30
 
 int main() {
 	int ret, fd, i, j;
@@ -57,7 +57,7 @@ int main() {
 
 			for (j = 0; j < N_ACCESSES; j++) {
 				pos = (rand() % (DISK_SZ / SECTOR_SIZE));
-				printf("pid %d, block %d\n", getpid(), pos);
+				//printf("pid %d, block %d\n", getpid(), pos);
 
 				/* Set position */
 				lseek(fd, pos * SECTOR_SIZE, SEEK_SET);
