@@ -11,8 +11,8 @@
 
 #define SECTOR_SIZE	512
 #define DISK_SZ		(4096 * 1024)
-#define N_ACCESSES	70
-#define N_FORKS		30
+#define N_ACCESSES	50
+#define N_FORKS		50
 
 int main() {
 	int ret, fd, i, j;

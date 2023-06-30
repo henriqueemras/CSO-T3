@@ -5,11 +5,8 @@
 #include <linux/slab.h>
 #include <linux/init.h>
 
-struct clook_request {
-	struct request *req;
-	struct list_head queuelist;
-};
 
+/* C-LOOK data structure. */
 struct clook_data {
 	struct list_head queue;
 };
@@ -23,51 +20,80 @@ static int clook_dispatch(struct request_queue *q, int force)
 {
 	struct clook_data *nd = q->elevator->elevator_data;
 	char direction = 'R';
-	struct clook_request *clook_rq;
+	struct request *rq, *next_rq;
+	sector_t cur_sector = -1;
+	struct list_head sec_queue;  // Fila secundária
 
-	clook_rq = list_first_entry_or_null(&nd->queue, struct clook_request, queuelist);
-	if (clook_rq) {
-		struct request *rq = clook_rq->req;
-		list_del_init(&clook_rq->queuelist);
+	// Inicializa a fila secundária
+	INIT_LIST_HEAD(&sec_queue);
+
+	// Percorre a fila principal para encontrar as requisições com setores menores que o setor atual
+	list_for_each_entry_safe(rq, next_rq, &nd->queue, queuelist) {
+		if (cur_sector == -1) {
+			cur_sector = blk_rq_pos(rq);
+		}
+
+		// Verifica se o setor da requisição é menor que o setor atual
+		if (blk_rq_pos(rq) < cur_sector) {
+			printk(KERN_EMERG "[C-LOOK] sec %c %lu\n", direction, blk_rq_pos(rq));
+			list_move_tail(&rq->queuelist, &sec_queue);
+		} else {
+			break;  // Interrompe o laço quando encontra a primeira requisição com setor maior ou igual ao setor atual
+		}
+	}
+
+	// Se a fila principal estiver vazia, adiciona a fila secundária à fila principal
+	if (list_empty(&nd->queue) && !list_empty(&sec_queue)) {
+		list_splice_tail_init(&sec_queue, &nd->queue);
+	}
+
+	// Despacha a primeira requisição da fila principal se ela não estiver vazia
+	if (!list_empty(&nd->queue)) {
+		rq = list_entry(nd->queue.next, struct request, queuelist);
+		list_del_init(&rq->queuelist);
 		elv_dispatch_sort(q, rq);
-		printk(KERN_EMERG "[C-LOOK] dsp %c %llu\n", direction, (unsigned long long)blk_rq_pos(rq));
-		kfree(clook_rq);
+		cur_sector = blk_rq_pos(rq) + blk_rq_sectors(rq);
+		printk(KERN_EMERG "[C-LOOK] dsp %c %lu\n", direction, blk_rq_pos(rq));
 		return 1;
 	}
+
 	return 0;
 }
+
+
+
 
 static void clook_add_request(struct request_queue *q, struct request *rq)
 {
 	struct clook_data *nd = q->elevator->elevator_data;
 	char direction = 'R';
 
-	struct clook_request *clook_rq = kmalloc(sizeof(*clook_rq), GFP_KERNEL);
-	if (!clook_rq) {
-		printk(KERN_EMERG "[C-LOOK] failed to allocate memory\n");
-		return;
-	}
+	printk(KERN_EMERG "[C-LOOK] add %c %lu\n", direction, blk_rq_pos(rq));
 
-	clook_rq->req = rq;
-
-	struct clook_request *curr, *next;
+	/* Ordena as requisições de acordo com a política C-LOOK */
+	struct request *curr, *next;
 
 	list_for_each_entry_safe(curr, next, &nd->queue, queuelist) {
-		if (blk_rq_pos(rq) < blk_rq_pos(curr->req)) {
-			list_add_tail(&clook_rq->queuelist, &curr->queuelist);
-			printk(KERN_EMERG "[C-LOOK] add %c %llu\n", direction, (unsigned long long)blk_rq_pos(rq));
+		if (blk_rq_pos(rq) < blk_rq_pos(curr)) {
+			list_add_tail(&rq->queuelist, &curr->queuelist);
 			return;
 		}
 	}
 
-	list_add_tail(&clook_rq->queuelist, &nd->queue);
-	printk(KERN_EMERG "[C-LOOK] add %c %llu\n", direction, (unsigned long long)blk_rq_pos(rq));
+	list_add_tail(&rq->queuelist, &nd->queue);
 }
+
 
 static int clook_init_queue(struct request_queue *q, struct elevator_type *e)
 {
 	struct clook_data *nd;
 	struct elevator_queue *eq;
+
+	/* Implementação da inicialização da fila (queue).
+	 *
+	 * Use como exemplo a inicialização da fila no driver noop-iosched.c
+	 *
+	 */
 
 	eq = elevator_alloc(q, e);
 	if (!eq)
@@ -93,6 +119,11 @@ static void clook_exit_queue(struct elevator_queue *e)
 {
 	struct clook_data *nd = e->elevator_data;
 
+	/* Implementação da finalização da fila (queue).
+	 *
+	 * Use como exemplo o driver noop-iosched.c
+	 *
+	 */
 	BUG_ON(!list_empty(&nd->queue));
 	kfree(nd);
 }
@@ -122,6 +153,6 @@ static void __exit clook_exit(void)
 module_init(clook_init);
 module_exit(clook_exit);
 
-MODULE_AUTHOR("Henrique Mrás");
+MODULE_AUTHOR("Sérgio Johann Filho");
 MODULE_LICENSE("GPL");
-MODULE_DESCRIPTION("C-LOOK IO scheduler");
+MODULE_DESCRIPTION("C-LOOK IO scheduler skeleton");
